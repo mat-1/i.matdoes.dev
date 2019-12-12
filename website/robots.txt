@@ -1,0 +1,4 @@
+user-agent: *
+allow: /
+
+Sitemap: https://www.imag.cf/sitemap.xml

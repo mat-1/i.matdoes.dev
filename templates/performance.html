@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block head %}
+{{ super() }}
+<script>
+window.onload = function() {
+	var memBar = document.getElementById('memBar'); 
+	var cpuBar = document.getElementById('cpuBar'); 
+	var memoryText = document.getElementById('memoryText')
+	var cpuText = document.getElementById('cpuText')
+	var uptimeText = document.getElementById('uptimeText')
+	var perf_ws = new WebSocket('wss://www.imag.cf/performance/ws')
+	perf_ws.onmessage = function (event) {
+		let data = JSON.parse(event.data)
+		memoryText.innerHTML = Math.floor(data.mem)
+		memBar.style.width = data.mem / 10.24 + '%'; 
+	
+		cpuText.innerHTML = data.cpu
+		cpuBar.style.width = data.cpu + '%'; 
+		uptimeText.innerHTML = data.uptime
+		viewsText.innerHTML = data.views
+		imagesText.innerHTML = data.images
+	}
+	perf_ws.onopen = function(event) {
+		console.log('Connected to websocket')
+	}
+	perf_ws.onclose = function(event) {
+		console.log('Disconnected from websocket.')
+		location.reload()
+	}
+	perf_ws.onerror = function(event) {
+		console.log('Something went wrong.')
+		location.reload()
+	}
+}
+</script>
+{% endblock %}
+{% block body %}
+<div id="container">
+	<div id="content">
+		<h1>Website performance</h1>
+		<p>RAM: <span id="memoryText">???</span>/1024mb</p>
+		<div id="mem" class="progress center">
+			<div id="memBar" class="bar"></div>
+		</div>
+
+		<p>CPU: <span id="cpuText">???</span>%</p>
+		<div id="cpu" class="progress center">
+			<div id="cpuBar" class="bar"></div>
+		</div>
+		<p>Uptime: <span id="uptimeText">???</span></p>
+		<p>Website views since uptime: <span id="viewsText">???</span></p>
+		<p>Total images: <span id="imagesText">???</span></p>
+	</div>
+</div>
+{% endblock %}

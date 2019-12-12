@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block head %}
+{{ super() }}
+<script>
+	window.onload = function() {
+		var form = document.getElementById("image-form")
+		var imageSelect = document.getElementById("imageSelect")
+		imageSelect.value = ""
+		imageSelect.addEventListener("change", function() {
+			if (imageSelect.files.length > 0) {
+				form.submit()
+			}
+		})
+	}
+</script>
+{% endblock %}
+{% block body %}
+<div id="container">
+	<div class="width100">
+		<div id="content">
+			<div id="title">
+				<h1>Simple and anonymous image uploader.</h1>
+				<a href="/__repl">View source code</a><br>
+				<a href="/api/docs">View API documentation</a>
+			</div>
+			<form action="/" method="post" enctype="multipart/form-data" id="image-form">
+				<label for="imageSelect"><div id="uploadImageText">Upload Image</div></label>
+				<input type="file" name="image" accept="image/*" id="imageSelect" alt="Select an image to upload">
+			</form>
+		</div>
+	</div>
+	<footer class="text-center">
+		{% block footer_content %}
+		© 2019 <a href="https://www.matdoes.dev">mat</a>
+		{% endblock %}
+	</footer>
+</div>
+{% endblock %}

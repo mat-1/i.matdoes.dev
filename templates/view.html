@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block body %}
+<div id="container">
+	<div id="content">
+		<div id="title">
+			<h1>
+				{{ id }}
+			</h1>
+		</div>
+		<img src="/image/{{ id }}" style="max-width:85%;max-height:70vh">
+		<p><button onclick="shorten()" id="viewButton">Create short link</button></p>
+	</div>
+</div>
+<script>
+function shorten() {
+	var xmlHttp = new XMLHttpRequest();
+	xmlHttp.open('GET', `/api/shorten/{{ id }}`, false); // false for synchronous request
+	xmlHttp.send( null );
+	document.location = '/'+xmlHttp.responseText
+}
+</script>
+{% endblock %}

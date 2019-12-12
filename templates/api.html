@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block head %}
+{{ super() }}
+<script>
+</script>
+{% endblock %}
+{% block body %}
+<div>
+	<h1 style="text-align:center">Imag.cf API</h1>
+	<ul style="width: max-content;margin: 0 auto;">
+		<li>
+			<h3>POST /api/upload</h3>
+			<p>Send data as {"image": &lt;file data&gt;}</p>
+				<p>Recieves Json with the following attributes:<br>
+				<code>hash</code> - The hash of the image,<br>
+				<code>url</code> - URL for viewing the image,<br>
+				<code>view</code> - URL for viewing the image without html,<br>
+				<code>password</code> - Password used for deleting the image,<br>
+				<code>delete</code> - URL shortcut for deleting the image
+			</p>
+		</li>
+		<li>
+			<h3>GET /api/shorten/&lt;hash&gt;</h3>
+			<p>Returns the short code for the image in plain text</p>
+		</li>
+		<li>
+			<h3>GET /api/delete/&lt;password&gt;</h3>
+			<p>Deletes the image if the password is correct</p>
+		</li>
+
+	</ul>
+	<footer class="text-center">
+		{% block footer_content %}
+		© 2019 <a href="https://www.matdoes.dev">mat</a>
+		{% endblock %}
+	</footer>
+</div>
+{% endblock %}
