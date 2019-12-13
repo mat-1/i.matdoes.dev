@@ -15,6 +15,7 @@ import binascii
 import secrets
 import compress
 import pcompress
+import setup
 
 banned_phrases = os.getenv('banned_phrases').split(',') # phrases that can't appear in short links
 
