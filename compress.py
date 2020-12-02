@@ -3,7 +3,6 @@ import zlib, struct
 header = b'\x89PNG\r\n\x1A\n'
 
 def png(bytes):
-
 	assert bytes.startswith(header)
 
 	output = header
@@ -26,7 +25,7 @@ def png(bytes):
 		bytes = bytes[chunk_length:]
 		crc = bytes[:4]
 		bytes = bytes[4:]
-		if chunk_type in [b'IHDR', b'PLTE', b'IDAT', b'IEND']:
+		if chunk_type in {b'IHDR', b'PLTE', b'IDAT', b'IEND', b'tRNS', b'pHYs', b'gAMA', b'sRGB'}:
 			if chunk_type == b'IDAT':
 				if chunk_length > idat_max_length:
 					idat_max_length = chunk_length
@@ -46,7 +45,7 @@ def png(bytes):
 				output += b'IDAT'
 				output += c
 				output += idat_crc
-			output += b'\x00\x00\x00\ntEXtAuthor\x00mat\xbch\xa4\xde\x00\x00\x00\x1dtEXtCopyright\x00(c) matdoesdev 2019\x7fW\xa9W\x00\x00\x00\x18tEXtSoftware\x00pure python boi\x07FM*\x00\x00\x00\x16tEXtSource\x00https://imag.cf.\x05\xe5\x9b'
+			# output += b'\x00\x00\x00\ntEXtAuthor\x00mat\xbch\xa4\xde\x00\x00\x00\x1dtEXtCopyright\x00(c) matdoesdev 2020\x7fW\xa9W\x00\x00\x00\x18tEXtSoftware\x00pure python boi\x07FM*\x00\x00\x00\x16tEXtSource\x00https://i.matdoes.dev.\x05\xe5\x9b'
 			output += b'\x00\x00\x00\x00IEND\xaeB`\x82'
 			return output
 		else:

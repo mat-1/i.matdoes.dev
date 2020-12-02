@@ -3,3 +3,4 @@ aiohttp
 jinja2
 psutil
 pillow
+dnspython

@@ -1,3 +1,4 @@
+import setup
 from aiohttp import web
 import hashlib
 import pymongo.errors
@@ -15,11 +16,10 @@ import binascii
 import secrets
 import compress
 import pcompress
-import setup
 
 banned_phrases = os.getenv('banned_phrases').split(',') # phrases that can't appear in short links
 
-base_url = 'https://imag.cf'
+base_url = 'https://i.matdoes.dev'
 
 print('initializing...')
 
@@ -30,7 +30,9 @@ routes = web.RouteTableDef()
 jinja_env = Environment(
 	loader=FileSystemLoader(searchpath='templates'),
 	autoescape=select_autoescape(['html', 'xml']),
-	enable_async=True
+	enable_async=True,
+	lstrip_blocks=True,
+	trim_blocks=True,
 )
 
 class templates:
@@ -195,6 +197,15 @@ async def get_json_data(request):
 			}
 		)
 	i_serialized = {}
+	if 'thumbnail' in i:
+		if not i['thumbnail']:
+			await show_image_thumbnail(i)
+		i_serialized['thumbnail_b64'] = b64encode(i['thumbnail']).decode()
+	else:
+		try:
+			await show_image_thumbnail(i)
+		except OSError:
+			pass
 	for k in i:
 		if isinstance(i[k], bytes):
 			i_serialized[k] = f'<{len(i[k])} bytes>'
@@ -236,7 +247,6 @@ async def get_b64_data(request):
 		body=b64encode(im_data).decode()
 	)
 
-
 async def delete_old_images(app):
 	return asyncio.ensure_future(delete_old_images_task(app))
 async def delete_old_images_task(app):
@@ -247,77 +257,106 @@ async def delete_old_images_task(app):
 			'last-view': {'$lt': search_before},
 			'data': {'$ne': None}
 		})
-		deleted_count += r.deleted_count
-		search_before = time.time() - 3600 # an hour
-		r = await db.images.delete_many({
-			'last-view': {'$lt': search_before},
-			'views': {'$lt': 2},
-			'data': {'$ne': None}
-		})
-		deleted_count += r.deleted_count
-		search_before = time.time() - 604800 # a week
-		r = await db.images.delete_many({
-			'last-view': {'$lt': search_before},
-			'views': {'$lt': 10},
-			'data': {'$ne': None}
-		})
-		deleted_count += r.deleted_count
-		search_before = time.time() - 2629746 # a month
-		r = await db.images.delete_many({
-			'last-view': {'$lt': search_before},
-			'views': {'$lt': 30},
-			'data': {'$ne': None}
-		})
-		deleted_count += r.deleted_count
-		if deleted_count > 0:
-			print('deleted', deleted_count, 'images')
-		perf.images -= deleted_count
-		await asyncio.sleep(3600)
+		# deleted_count += r.deleted_count
+		# search_before = time.time() - 3600 # an hour
+		# r = await db.images.delete_many({
+		# 	'last-view': {'$lt': search_before},
+		# 	'views': {'$lte': 1},
+		# 	'data': {'$ne': None},
+		# 	'length': {'$gt': 10000}
+		# })
+		# deleted_count += r.deleted_count
+		# search_before = time.time() - 604800 # a week
+		# r = await db.images.delete_many({
+		# 	'last-view': {'$lt': search_before},
+		# 	'views': {'$lt': 10},
+		# 	'data': {'$ne': None},
+		# 	'length': {'$gt': 2000}
+		# })
+		# deleted_count += r.deleted_count
+		# search_before = time.time() - 2629746 # a month
+		# r = await db.images.delete_many({
+		# 	'last-view': {'$lt': search_before},
+		# 	'views': {'$lt': 30},
+		# 	'data': {'$ne': None}
+		# })
+		# deleted_count += r.deleted_count
+		# if deleted_count > 0:
+		# 	print('deleted', deleted_count, 'images')
+		# perf.images -= deleted_count
+		# await asyncio.sleep(3600)
 
 async def compress_old_images(app):
 	return asyncio.ensure_future(compress_old_images_task(app))
 
-async def compress_old_images_task(app):
-	compressed_count = 0
-	search_before = time.time() - 604800 # a week
-	r = db.images.find({
-		'last-view': {'$lt': search_before},
-		'data': {'$ne': None}
-	})
-	async for doc in r:
-		if len(doc['data']) == 0:
-			await db.images.delete_one({'_id': doc['_id']})
-			print('deleted 1')
-			continue
-		elif len(doc['data']) < 10000:
-			#print('compressing',doc['_i
-			old_data = doc['data']
-			if len(old_data) == 0:
-				await db.images.delete_one({'_id': doc['_id']})
-				print('deleted 1')
-				continue
-			try:
-				new_data = await loop.run_in_executor(None, pcompress.resize, doc['data'], 256)
-				doc['data'] = new_data
-				if len(new_data) < len(old_data):
-					await db.images.find_one_and_replace(
-						{'_id': doc['_id']},
-						doc
-					)
-					compressed_count += 1
-					print('compressed image.',len(old_data), 'bytes to', len(new_data))
-			except binascii.Error:
-				await asyncio.sleep(1)
-			except RuntimeError:
-				await asyncio.sleep(10)
-				return await compress_old_images(app)
-
-		elif len(doc['data']) < 100000:
+async def compress_image(doc):
+	try:
+		if doc['type'] != 'image/jpeg':
 			new_data = await loop.run_in_executor(None, pcompress.change_format, doc['data'], 'jpeg')
 			doc['content-type'] = 'image/jpeg'
 			doc['data'] = new_data
-			
-	print('Compressed', compressed_count, 'images')
+		else:
+			new_size = max((doc['width'], doc['height'])) * .9
+			if new_size > 1000:
+				new_data = await loop.run_in_executor(None, pcompress.resize, doc['data'], new_size)
+			else:
+				if 'jpeg-compression' in doc:
+					jpeg_compression = doc['jpeg-compression'] - 5
+				else:
+					jpeg_compression = 50
+				new_data = await loop.run_in_executor(None, pcompress.change_format, doc['data'], 'jpeg', jpeg_compression)
+				doc['content-type'] = 'image/jpeg'
+				doc['data'] = new_data
+				doc['jpeg-compression'] = jpeg_compression
+	except binascii.Error:
+		return
+	except RuntimeError:
+		return
+	old_length = doc['length']
+	doc['data'] = new_data
+	doc['length'] = len(new_data)
+	await db.images.find_one_and_replace(
+		{'_id': doc['_id']},
+		doc
+	)
+	print('Saved', old_length - doc['length'], 'bytes')
+
+
+async def compress_many(match):
+	r = db.images.find(match)
+	async for doc in r:
+		if len(doc['data']) == 0:
+			await db.images.delete_one({'_id': doc['_id']})
+		else:
+			await compress_image(doc)
+
+
+async def compress_old_images_task(app):
+	async for doc in db.images.find({
+		'last-view': {'$lt': time.time() - 120}, # if an image hasnt been viewed in 2 minutes and it hasnt done the normal jpeg compression, do that
+		'json-compression': {'$exists': False},
+		'content-type': 'image/jpeg'
+	}):
+		jpeg_compression = 50
+		new_data = await loop.run_in_executor(None, pcompress.change_format, doc['data'], 'jpeg', jpeg_compression)
+		doc['content-type'] = 'image/jpeg'
+		doc['data'] = new_data
+		doc['jpeg-compression'] = jpeg_compression
+		await db.images.find_one_and_replace(
+			{'_id': doc['_id']},
+			doc
+		)
+
+
+	search_max_time = 604800 # a week
+	while search_max_time > 86400 * 24:
+		search_before = time.time() - search_max_time
+		await compress_many({
+			'last-view': {'$lt': search_before},
+			'data': {'$ne': None}
+		})
+		search_max_time -= 3600
+
 
 async def add_one_view(im_hash):
 	await db.images.update_one(
@@ -356,14 +395,61 @@ async def show_image(i):
 		content_type=i['content-type']
 	)
 
+async def show_image_thumbnail(doc):
+	if doc is None:
+		return web.HTTPNotFound(
+			body='Not found, image is None',
+			headers={
+				'content-type': 'text/html'
+			}
+		)
+	im_thumbnail = doc.get('thumbnail')
+	if im_thumbnail == None:
+		if doc['data']:
+			thumbnail_bytes = await loop.run_in_executor(
+				None, pcompress.webp_compress, doc['data']
+			)
+			await db.images.update_one(
+				{'id': doc['id']},
+				{'$set': {
+					'thumbnail': thumbnail_bytes,
+					'thumbnail-content-type': 'image/webp',
+				}}
+			)
+			im_thumbnail = thumbnail_bytes
+		else:
+			return web.HTTPGone(
+				body='This image has been removed',
+				headers={
+					'content-type': 'text/html'
+				}
+			)
+
+	
+	if not 'content-type' in doc:
+		return web.Response(
+			text='No content type found'
+		)
+	return web.Response(
+		body=im_thumbnail,
+		content_type=doc.get('thumbnail-content-type', 'image/webp')
+	)
+
 @routes.get('/image/{hex}')
 async def get_image(request):
 	im_hash = request.match_info['hex']
 	if '.' in im_hash:
 		im_hash, _ = im_hash.split('.', 1)
-	print(im_hash)
 	i = await db.images.find_one({'_id': im_hash})
 	return await show_image(i)
+
+@routes.get('/image/{hex}/thumbnail')
+async def get_image(request):
+	im_hash = request.match_info['hex']
+	if '.' in im_hash:
+		im_hash, _ = im_hash.split('.', 1)
+	i = await db.images.find_one({'_id': im_hash})
+	return await show_image_thumbnail(i)
 
 	
 
@@ -416,32 +502,51 @@ class NotAnImageError(Exception):pass
 class TooLargeError(Exception):pass
 
 async def compress_png(doc):
-	# return
-	if not doc['content-type'].startswith('image/png'):
-		return
 	loop = asyncio.get_event_loop()
-	new_bytes = await loop.run_in_executor(
-		None, compress.png, doc['data']
-	)
-	if len(new_bytes) < len(doc['data']):
-		print('png compressed', len(doc['data']), 'bytes to', len(new_bytes), 'bytes')
-		# doc['data'] = new_bytes
-		# print('id:', doc['id'])
-		await db.images.update_one(
-			{'id': doc['id']},
-			{'$set': {'data': new_bytes}}
+	if doc['content-type'].startswith('image/png'):
+		new_bytes = await loop.run_in_executor(
+			None, compress.png, doc['data']
 		)
+		if len(new_bytes) < len(doc['data']):
+			print('png compressed', len(doc['data']), 'bytes to', len(new_bytes), 'bytes')
+			# doc['data'] = new_bytes
+			# print('id:', doc['id'])
+			await db.images.update_one(
+				{'id': doc['id']},
+				{'$set': {
+					'data': new_bytes,
+					'length': len(new_bytes)
+				}}
+			)
+			doc['data'] = new_bytes
+		
+	thumbnail_bytes = await loop.run_in_executor(
+		None, pcompress.webp_compress, doc['data']
+	)
+	await db.images.update_one(
+		{'id': doc['id']},
+		{'$set': {
+			'thumbnail': thumbnail_bytes,
+			'thumbnail-content-type': 'image/webp',
+		}}
+	)
+	
 
 async def upload_image(im_bytes, content_type, short_url=None):
 	if not content_type.startswith('image/'):
+		print(content_type)
 		raise NotAnImageError('Invalid content type')
 	hash_md5 = hashlib.md5()
 	if len(im_bytes) >= max_im_len: # if image is larger than 1mb then convert to jpeg
 		print('compressing large image when uploading')
 		try:
-			new_data = await loop.run_in_executor(None, pcompress.change_format, im_bytes, 'jpeg', 50)
-			content_type = 'image/jpeg'
-		except:
+			if content_type == 'image/gif':
+				new_data = await loop.run_in_executor(None, pcompress.resize, im_bytes, 100, True)
+			else:
+				new_data = await loop.run_in_executor(None, pcompress.change_format, im_bytes, 'jpeg', 100)
+				content_type = 'image/jpeg'
+		except Exception as e:
+			print('error on compressing large image', type(e), e)
 			new_data = im_bytes
 		if len(new_data) >= max_im_len: # 1mb
 			raise TooLargeError('Image is too large :(')
@@ -456,6 +561,7 @@ async def upload_image(im_bytes, content_type, short_url=None):
 	# print('Took', time2-time1, 'seconds to generate md5 hash')
 	# print(im_hash, im_bytes)
 	im_password = secrets.token_hex(16)
+	image_width, image_height = pcompress.get_image_size(im_bytes)
 	try:
 		document = {
 			'id': im_hash,
@@ -465,10 +571,18 @@ async def upload_image(im_bytes, content_type, short_url=None):
 			'last-view': time.time(),
 			'short': short_url,
 			'password': im_password,
-			
+			'length': len(im_bytes),
+			'thumbnail': None,
+			'thumbnail-content-type': None,
+			'width': image_width,
+			'height': image_height
 		}
 		# time1 = time.time()
-		await db.images.replace_one({'_id': im_hash}, document, upsert=True)
+		await db.images.update_one(
+			{'_id': im_hash},
+			{'$set': document},
+			upsert=True
+		)
 		# time2 = time.time()
 		# print('Took', time2-time1,'seconds to set image')
 
@@ -481,6 +595,7 @@ async def upload_image(im_bytes, content_type, short_url=None):
 @routes.post('/')
 async def upload_image_manual(request):
 	data = await request.post()
+	print(data)
 	image = data['image']
 	content_type = image.content_type
 	im_bytes = image.file.read()
@@ -537,7 +652,7 @@ async def api_upload(request):
 	start_time = time.time()
 	im_bytes = image.file.read()
 	end_time = time.time()
-	print(end_time - start_time)
+	print('spent', float(end_time - start_time), 'seconds reading file from api')
 	try:
 		im_hash, im_password = await upload_image(im_bytes, content_type)
 	except TooLargeError:

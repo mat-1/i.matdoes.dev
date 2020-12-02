@@ -3,10 +3,11 @@
 authors = ["Your Name <you@example.com>"]
 name = "root"
 version = "0.0.0"
+description = ""
 [tool.poetry.dependencies]
 aiohttp = "*"
 jinja2 = "*"
 motor = "*"
 pillow = "*"
 psutil = "*"
-python = "^3.7"
+python = "^3.8"
