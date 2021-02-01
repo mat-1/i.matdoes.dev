@@ -296,7 +296,7 @@ async def compress_image(doc):
 			doc['content-type'] = 'image/jpeg'
 			doc['data'] = new_data
 		else:
-			if doc['width'] * doc['height'] > 10000:
+			if doc['width'] * doc['height'] > 100000:
 				new_size = max((doc['width'], doc['height'])) * .9
 				ratio = min(new_size / doc['width'], new_size / doc['height'])
 				new_data = await loop.run_in_executor(None, pcompress.resize, doc['data'], new_size)
