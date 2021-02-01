@@ -249,6 +249,7 @@ async def get_b64_data(request):
 
 async def delete_old_images(app):
 	return asyncio.ensure_future(delete_old_images_task(app))
+
 async def delete_old_images_task(app):
 	while True:
 		deleted_count = 0
@@ -296,11 +297,13 @@ async def compress_image(doc):
 			doc['content-type'] = 'image/jpeg'
 			doc['data'] = new_data
 		else:
-			if doc['width'] * doc['height'] > 100000:
-				new_size = max((doc['width'], doc['height'])) * .9
-				ratio = min(new_size / doc['width'], new_size / doc['height'])
+			original_width = doc.get('width', 1024)
+			original_height = doc.get('width', 512)
+			if original_width * original_height > 100000:
+				new_size = max((original_width, original_height)) * .9
+				ratio = min(new_size / original_width, new_size / original_height)
 				new_data = await loop.run_in_executor(None, pcompress.resize, doc['data'], new_size)
-				doc['width'], doc['height'] = int(doc['width'] * ratio), int(doc['height'] * ratio)
+				doc['width'], doc['height'] = int(original_width * ratio), int(original_height * ratio)
 			else:
 				if 'jpeg-compression' in doc:
 					jpeg_compression = doc['jpeg-compression'] - 5
@@ -316,7 +319,7 @@ async def compress_image(doc):
 	except RuntimeError:
 		print('RuntimeError compressing :(')
 		return
-	old_length = doc['length']
+	old_length = doc.get('length', 0)
 	doc['data'] = new_data
 	doc['length'] = len(new_data)
 	await db.images.find_one_and_replace(
@@ -328,11 +331,13 @@ async def compress_image(doc):
 
 async def compress_many(match):
 	r = db.images.find(match)
+	print('started compressing many')
 	async for doc in r:
 		if len(doc['data']) == 0:
 			await db.images.delete_one({'_id': doc['_id']})
 		else:
 			await compress_image(doc)
+	print('finished compressing many')
 
 
 async def compress_old_images_task(app):
@@ -351,15 +356,14 @@ async def compress_old_images_task(app):
 			doc
 		)
 
-
+	print('starting to do more compression')
 	search_max_time = 604800 # a week
-	while search_max_time > 86400 * 24:
-		search_before = time.time() - search_max_time
-		await compress_many({
-			'last-view': {'$lt': search_before},
-			'data': {'$ne': None}
-		})
-		search_max_time -= 3600
+
+	search_before = time.time() - search_max_time
+	await compress_many({
+		'last-view': {'$lt': search_before},
+		'data': {'$ne': None}
+	})
 
 
 async def add_one_view(im_hash):
