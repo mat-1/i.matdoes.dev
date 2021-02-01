@@ -291,14 +291,16 @@ async def compress_old_images(app):
 
 async def compress_image(doc):
 	try:
-		if doc['type'] != 'image/jpeg':
+		if doc['content-type'] != 'image/jpeg':
 			new_data = await loop.run_in_executor(None, pcompress.change_format, doc['data'], 'jpeg')
 			doc['content-type'] = 'image/jpeg'
 			doc['data'] = new_data
 		else:
-			new_size = max((doc['width'], doc['height'])) * .9
-			if new_size > 1000:
+			if doc['width'] * doc['height'] > 10000:
+				new_size = max((doc['width'], doc['height'])) * .9
+				ratio = min(new_size / doc['width'], new_size / doc['height'])
 				new_data = await loop.run_in_executor(None, pcompress.resize, doc['data'], new_size)
+				doc['width'], doc['height'] = int(doc['width'] * ratio), int(doc['height'] * ratio)
 			else:
 				if 'jpeg-compression' in doc:
 					jpeg_compression = doc['jpeg-compression'] - 5
@@ -309,8 +311,10 @@ async def compress_image(doc):
 				doc['data'] = new_data
 				doc['jpeg-compression'] = jpeg_compression
 	except binascii.Error:
+		print('binascii error compressing :(')
 		return
 	except RuntimeError:
+		print('RuntimeError compressing :(')
 		return
 	old_length = doc['length']
 	doc['data'] = new_data
@@ -392,7 +396,10 @@ async def show_image(i):
 		)
 	return web.Response(
 		body=im_data,
-		content_type=i['content-type']
+		content_type=i['content-type'],
+		headers={
+			'Cache-Control': 'max-age=86400'
+		}
 	)
 
 async def show_image_thumbnail(doc):
@@ -436,7 +443,7 @@ async def show_image_thumbnail(doc):
 	)
 
 @routes.get('/image/{hex}')
-async def get_image(request):
+async def get_image_view(request):
 	im_hash = request.match_info['hex']
 	if '.' in im_hash:
 		im_hash, _ = im_hash.split('.', 1)
@@ -444,7 +451,7 @@ async def get_image(request):
 	return await show_image(i)
 
 @routes.get('/image/{hex}/thumbnail')
-async def get_image(request):
+async def get_image_thumbnail_view(request):
 	im_hash = request.match_info['hex']
 	if '.' in im_hash:
 		im_hash, _ = im_hash.split('.', 1)
@@ -722,6 +729,17 @@ async def delete_im_from_pass(request):
 	
 	return web.Response(
 		text='ok' if r.deleted_count else 'nothing got deleted'
+	)
+
+
+@routes.get('/api/compress/{password}')
+async def compress_im_from_pass(request):
+	im_password = request.match_info['password']
+	doc = await db.images.find_one({'password': im_password})
+	await compress_image(doc)
+	
+	return web.Response(
+		text='ok'
 	)
 
 
